@@ -1,12 +1,14 @@
-from __future__ import absolute_import
-
-# from celery import shared_task
 from django.core.mail import send_mail
 from django.conf import settings
-from common import celery_app as app
+from celery import shared_task
+
+from .utils import get_logger
 
 
-@app.task
+logger = get_logger(__file__)
+
+
+@shared_task
 def send_mail_async(*args, **kwargs):
     """ Using celery to send email async
 
@@ -23,7 +25,11 @@ def send_mail_async(*args, **kwargs):
     if len(args) == 3:
         args = list(args)
         args[0] = settings.EMAIL_SUBJECT_PREFIX + args[0]
-        args.insert(2, settings.EMAIL_HOST_USER)
+        email_from = settings.EMAIL_FROM or settings.EMAIL_HOST_USER
+        args.insert(2, email_from)
         args = tuple(args)
 
-    send_mail(*args, **kwargs)
+    try:
+        return send_mail(*args, **kwargs)
+    except Exception as e:
+        logger.error("Sending mail error: {}".format(e))

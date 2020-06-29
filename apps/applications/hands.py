@@ -1,8 +1,15 @@
-# -*- coding: utf-8 -*-
-# 
+"""
+    jumpserver.__app__.hands.py
+    ~~~~~~~~~~~~~~~~~
 
-from users.models import User
-from users.permissions import IsSuperUserOrAppUser, IsAppUser, \
-    IsSuperUserOrAppUserOrUserReadonly
-from audits.models import ProxyLog
-from users.utils import AdminUserRequiredMixin
+    This app depends other apps api, function .. should be import or write mack here.
+
+    Other module of this app shouldn't connect with other app.
+
+    :copyright: (c) 2014-2018 by JumpServer Team.
+    :license: GPL v2, see LICENSE for more details.
+"""
+
+
+from common.permissions import IsAppUser, IsOrgAdmin, IsValidUser, IsOrgAdminOrAppUser
+from users.models import User, UserGroup

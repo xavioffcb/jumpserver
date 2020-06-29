@@ -1,94 +1,233 @@
-## Jumpserver
-Jumpserver is a open source proxy server, developed by `Python` and `Django`, aim to help 
-companies to efficiently user, assets, authority and audit management
+# JumpServer 多云环境下更好用的堡垒机
 
-Jumpserver是一款使用Python, Django开发的开源跳板机系统, 助力互联网企业高效 用户、资产、权限、审计 管理
+[![Python3](https://img.shields.io/badge/python-3.6-green.svg?style=plastic)](https://www.python.org/)
+[![Django](https://img.shields.io/badge/django-2.2-brightgreen.svg?style=plastic)](https://www.djangoproject.com/)
 
-### Feature 功能
-  - Auth 统一认证
-  - CMDB 资产管理
-  - Perm 统一授权
-  - Audit 审计
-  - LDAP AUTH 支持LDAP认证
-  - Web terminal
-  - SSH Server
+JumpServer 是全球首款开源的堡垒机，使用 GNU GPL v2.0 开源协议，是符合 4A 规范的运维安全审计系统。
 
+JumpServer 使用 Python / Django 为主进行开发，遵循 Web 2.0 规范，配备了业界领先的 Web Terminal 方案，交互界面美观、用户体验好。
 
-### Environment 环境
-   * Python 3.5  
-   * Django 1.11
+JumpServer 采纳分布式架构，支持多机房跨区域部署，支持横向扩展，无资产数量及并发限制。
 
-### Install 安装 
-Using docker compose to setup it
+改变世界，从一点点开始。
 
-使用docker compose 安装，一键完成，docker compose 安装见 docker官方
+> 注: [KubeOperator](https://github.com/KubeOperator/KubeOperator) 是 JumpServer 团队在 Kubernetes 领域的的又一全新力作，欢迎关注和使用。
 
-   $ docker-compose up
+## 特色优势
 
-### Usage 使用
-   1. Visit http://$HOST:8080 (访问 http://你的主机IP:8080 来访问 Jumpserver)
- 
-   2. Click left navigation visit Applications-Terminal and accept coco and luna register
-      (点击左侧 应用程序接受 Coco和Luna的注册)
-   
-   3. Click Assets-Admin user, Create admin user
-      (添加 管理用户)
-   
-   4. Click Assets-System user, Create system user
-      (添加 系统用户)
-      
-   5. Click Assets-Asset, Add a asset
-      (添加 资产)
-   
-   6. Click Perms-Asset permission, Add a perm rule
-      (添加授权规则，授权给admin)
-   
-   7. Connect ssh server coco (连接 ssh server coco)
-      
-      ssh -p2222 $USER@$Host
- 
-   8. Visit web terminal server Luna, click server test connection
-      (访问 访问Luna，点击左侧服务器连接测试)
-      
-      http://$HOST:5000
-   
-   
-### Snapshot 截图
+- 开源: 零门槛，线上快速获取和安装, 修复版本视情况而定；
+, 修复版本视情况而定- 分布式: 轻松支持大规模并发访问；
+- 无插件: 仅需浏览器，极致的 Web Terminal 使用体验；
+- 多云支持: 一套系统，同时管理不同云上面的资产；
+- 云端存储: 审计录像云端存储，永不丢失；
+- 多租户: 一套系统，多个子公司和部门同时使用。
 
-    https://github.com/jumpserver/jumpserver/issues/438
+## 版本说明
 
+自 v2.0.0 发布后， JumpServer 版本号命名将变更为：v大版本.功能版本.Bug修复版本。比如：
 
-### Demo
+```
+v2.0.1 是 v2.0.0 之后的Bug修复版本；
+v2.1.0 是 v2.0.0 之后的功能版本。
+```
 
-demo使用了开发者模式，并发只能为1 
+像其它优秀开源项目一样，JumpServer 每个月会发布一个功能版本，并同时维护 3 个功能版本。比如：
 
-- Jumpserver: [访问](http://demo.jumpserver.org:8080)  账号: admin 密码: admin
+```
+在 v2.4 发布前，我们会同时维护 v2.1、v2.2、v2.3；
+在 v2.4 发布后，我们会同时维护 v2.2、v2.3、v2.4；v2.1 会停止维护。
+```
 
-- Luna: [访问](http://demo.jumpserver.org:5000) 同Jumpserver认证
+## 功能列表
 
-- Coco: ssh -p 2222 admin@demo.jumpserver.org 密码: admin
+<table>
+  <tr>
+    <td rowspan="8">身份认证<br>Authentication</td>
+    <td rowspan="5">登录认证</td>
+    <td>资源统一登录与认证</td>
+  </tr>
+  <tr>
+    <td>LDAP/AD 认证</td>
+  </tr>
+  <tr>
+    <td>RADIUS 认证</td>
+  </tr>
+  <tr>
+    <td>OpenID 认证（实现单点登录）</td>
+  </tr>
+  <tr>
+    <td>CAS 认证 （实现单点登录）</td>
+  </tr>
+  <tr>
+    <td rowspan="2">MFA认证</td>
+    <td>MFA 二次认证（Google Authenticator）</td>
+  </tr>
+  <tr>
+    <td>RADIUS 二次认证</td>
+  </tr>
+  <tr>
+    <td>登录复核（X-PACK）</td>
+    <td>用户登录行为受管理员的监管与控制</td>
+  </tr>
+  <tr>
+    <td rowspan="11">账号管理<br>Account</td>
+    <td rowspan="2">集中账号</td>
+    <td>管理用户管理</td>
+  </tr>
+  <tr>
+    <td>系统用户管理</td>
+  </tr>
+  <tr>
+    <td rowspan="4">统一密码</td>
+    <td>资产密码托管</td>
+  </tr>
+  <tr>
+    <td>自动生成密码</td>
+  </tr>
+  <tr>
+    <td>自动推送密码</td>
+  </tr>
+  <tr>
+    <td>密码过期设置</td>
+  </tr>
+  <tr>
+    <td rowspan="2">批量改密（X-PACK）</td>
+    <td>定期批量改密</td>
+  </tr>
+  <tr>
+    <td>多种密码策略</td>
+  </tr>
+  <tr>
+    <td>多云纳管（X-PACK）</td>
+    <td>对私有云、公有云资产自动统一纳管</td>
+  </tr>
+  <tr>
+    <td>收集用户（X-PACK）</td>
+    <td>自定义任务定期收集主机用户</td>
+  </tr>
+  <tr>
+    <td>密码匣子（X-PACK）</td>
+    <td>统一对资产主机的用户密码进行查看、更新、测试操作</td>
+  </tr>
+  <tr>
+    <td rowspan="15">授权控制<br>Authorization</td>
+    <td>多维授权</td>
+    <td>对用户、用户组、资产、资产节点、应用以及系统用户进行授权</td>
+  </tr>
+  <tr>
+    <td rowspan="4">资产授权</td>
+    <td>资产以树状结构进行展示</td>
+  </tr>
+  <tr>
+    <td>资产和节点均可灵活授权</td>
+  </tr>
+  <tr>
+    <td>节点内资产自动继承授权</td>
+  </tr>
+  <tr>
+    <td>子节点自动继承父节点授权</td>
+  </tr>
+  <tr>
+    <td rowspan="2">应用授权</td>
+    <td>实现更细粒度的应用级授权</td>
+  </tr>
+  <tr>
+    <td>MySQL 数据库应用、RemoteApp 远程应用（X-PACK）</td>
+  </tr>
+  <tr>
+    <td>动作授权</td>
+    <td>实现对授权资产的文件上传、下载以及连接动作的控制</td>
+  </tr>
+  <tr>
+    <td>时间授权</td>
+    <td>实现对授权资源使用时间段的限制</td>
+  </tr>
+  <tr>
+    <td>特权指令</td>
+    <td>实现对特权指令的使用（支持黑白名单）</td>
+  </tr>
+  <tr>
+    <td>命令过滤</td>
+    <td>实现对授权系统用户所执行的命令进行控制</td>
+  </tr>
+  <tr>
+    <td>文件传输</td>
+    <td>SFTP 文件上传/下载</td>
+  </tr>
+  <tr>
+    <td>文件管理</td>
+    <td>实现 Web SFTP 文件管理</td>
+  </tr>
+  <tr>
+    <td>工单管理（X-PACK）</td>
+    <td>支持对用户登录请求行为进行控制</td>
+  </tr>
+  <tr>
+    <td>组织管理（X-PACK）</td>
+    <td>实现多租户管理与权限隔离</td>
+  </tr>
+  <tr>
+    <td rowspan="7">安全审计<br>Audit</td>
+    <td>操作审计</td>
+    <td>用户操作行为审计</td>
+  </tr>
+  <tr>
+    <td rowspan="2">会话审计</td>
+    <td>在线会话内容审计</td>
+  </tr>
+  <tr>
+    <td>历史会话内容审计</td>
+  </tr>
+  <tr>
+    <td rowspan="2">录像审计</td>
+    <td>支持对 Linux、Windows 等资产操作的录像进行回放审计</td>
+  </tr>
+  <tr>
+    <td>支持对 RemoteApp（X-PACK）、MySQL 等应用操作的录像进行回放审计</td>
+  </tr>
+  <tr>
+    <td>指令审计</td>
+    <td>支持对资产和应用等操作的命令进行审计</td>
+  </tr>
+  <tr>
+    <td>文件传输</td>
+    <td>可对文件的上传、下载记录进行审计</td>
+  </tr>
+</table>
 
-### ROADMAP
+## 快速开始
 
-参见 https://github.com/jumpserver/jumpserver/milestone/2
+- [极速安装](https://docs.jumpserver.org/zh/master/install/setup_by_fast/)
+- [完整文档](https://docs.jumpserver.org)
+- [演示视频](https://jumpserver.oss-cn-hangzhou.aliyuncs.com/jms-media/%E3%80%90%E6%BC%94%E7%A4%BA%E8%A7%86%E9%A2%91%E3%80%91Jumpserver%20%E5%A0%A1%E5%9E%92%E6%9C%BA%20V1.5.0%20%E6%BC%94%E7%A4%BA%E8%A7%86%E9%A2%91%20-%20final.mp4)
 
-### Docs 开发者文档
+## 案例研究
 
+- [JumpServer 堡垒机护航顺丰科技超大规模资产安全运维](https://blog.fit2cloud.com/?p=1147)；
+- [JumpServer 堡垒机让“大智慧”的混合 IT 运维更智慧](https://blog.fit2cloud.com/?p=882)；
+- [携程 JumpServer 堡垒机部署与运营实战](https://blog.fit2cloud.com/?p=851)；
+- [小红书的JumpServer堡垒机大规模资产跨版本迁移之路](https://blog.fit2cloud.com/?p=516)；
+- [JumpServer堡垒机助力中手游提升多云环境下安全运维能力](https://blog.fit2cloud.com/?p=732)；
+- [中通快递：JumpServer主机安全运维实践](https://blog.fit2cloud.com/?p=708)；
+- [东方明珠：JumpServer高效管控异构化、分布式云端资产](https://blog.fit2cloud.com/?p=687)；
+- [江苏农信：JumpServer堡垒机助力行业云安全运维](https://blog.fit2cloud.com/?p=666)。
 
-   * [Project structure 项目结构描述](https://github.com/jumpserver/jumpserver/blob/dev/docs/project_structure.md)
-   * [Code style Python代码规范](https://github.com/jumpserver/jumpserver/blob/dev/docs/python_style_guide.md)
-   * [Api style API设计规范](https://github.com/jumpserver/jumpserver/blob/dev/docs/api_style_guide.md)
+## 安全说明
 
-### Contributor 贡献者
-#### 0.4.0
-- ibuler <广宏伟>
-- 小彧 <李磊> Django资深开发者，为users模块贡献了很多代码
-- sofia <周小侠> 资深前端工程师, luna前端代码贡献者和现在维护者
-- liuz <刘正> 全栈工程师, 编写了luna大部分代码
-- jiaxiangkong <陈尚委> Jumpserver测试运营
+JumpServer是一款安全产品，请参考 [基本安全建议](https://docs.jumpserver.org/zh/master/install/install_security/) 部署安装.
 
-#### 0.3.2 
-- halcyon <王墉> DevOps 资深开发者, jassets开发者
-- yumaojun03 <喻茂峻> DevOps 资深开发者，jperm开发者，擅长Python, Go以及PAAS平台开发
-- kelianchun <柯连春> DevOps 资产开发者，fix了很多connect.py bug
+如果你发现安全问题，可以直接联系我们：
 
+- ibuler@fit2cloud.com 
+- support@fit2cloud.com 
+- 400-052-0755
+
+## License & Copyright
+
+Copyright (c) 2014-2020 飞致云 FIT2CLOUD, All rights reserved.
+
+Licensed under The GNU General Public License version 2 (GPLv2)  (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at
+
+https://www.gnu.org/licenses/gpl-2.0.html
+
+Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.

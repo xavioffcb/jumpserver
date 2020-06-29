@@ -1,304 +1,241 @@
 # ~*~ coding: utf-8 ~*~
-from __future__ import unicode_literals
 
 import os
-from collections import namedtuple, defaultdict
+import shutil
+from collections import namedtuple
 
+from ansible import context
+from ansible.module_utils.common.collections import ImmutableDict
 from ansible.executor.task_queue_manager import TaskQueueManager
-from ansible.vars import VariableManager
+from ansible.vars.manager import VariableManager
 from ansible.parsing.dataloader import DataLoader
 from ansible.executor.playbook_executor import PlaybookExecutor
 from ansible.playbook.play import Play
 import ansible.constants as C
-from ansible.utils.vars import load_extra_vars
-from ansible.utils.vars import load_options_vars
 
-from .inventory import JMSInventory
-from .callback import AdHocResultCallback, PlaybookResultCallBack, \
-    CommandResultCallback
+from .callback import (
+    AdHocResultCallback, PlaybookResultCallBack, CommandResultCallback
+)
 from common.utils import get_logger
+from .exceptions import AnsibleError
 
 
-__all__ = ["AdHocRunner", "PlayBookRunner"]
-
+__all__ = ["AdHocRunner", "PlayBookRunner", "CommandRunner"]
 C.HOST_KEY_CHECKING = False
-
 logger = get_logger(__name__)
 
 
-# Jumpserver not use playbook
-class PlayBookRunner(object):
+Options = namedtuple('Options', [
+    'listtags', 'listtasks', 'listhosts', 'syntax', 'connection',
+    'module_path', 'forks', 'remote_user', 'private_key_file', 'timeout',
+    'ssh_common_args', 'ssh_extra_args', 'sftp_extra_args',
+    'scp_extra_args', 'become', 'become_method', 'become_user',
+    'verbosity', 'check', 'extra_vars', 'playbook_path', 'passwords',
+    'diff', 'gathering', 'remote_tmp',
+])
+
+
+def get_default_options():
+    options = dict(
+        syntax=False,
+        timeout=30,
+        connection='ssh',
+        forks=10,
+        remote_user='root',
+        private_key_file=None,
+        become=None,
+        become_method=None,
+        become_user=None,
+        verbosity=1,
+        check=False,
+        diff=False,
+        gathering='implicit',
+        remote_tmp='/tmp/.ansible'
+    )
+    return options
+
+
+# JumpServer not use playbook
+class PlayBookRunner:
     """
     用于执行AnsiblePlaybook的接口.简化Playbook对象的使用.
     """
-    Options = namedtuple('Options', [
-        'listtags', 'listtasks', 'listhosts', 'syntax', 'connection',
-        'module_path', 'forks', 'remote_user', 'private_key_file', 'timeout',
-        'ssh_common_args', 'ssh_extra_args', 'sftp_extra_args',
-        'scp_extra_args', 'become', 'become_method', 'become_user',
-        'verbosity', 'check', 'extra_vars'])
 
-    def __init__(self,
-                 hosts=None,
-                 playbook_path=None,
-                 forks=C.DEFAULT_FORKS,
-                 listtags=False,
-                 listtasks=False,
-                 listhosts=False,
-                 syntax=False,
-                 module_path=None,
-                 remote_user='root',
-                 timeout=C.DEFAULT_TIMEOUT,
-                 ssh_common_args=None,
-                 ssh_extra_args=None,
-                 sftp_extra_args=None,
-                 scp_extra_args=None,
-                 become=True,
-                 become_method=None,
-                 become_user="root",
-                 verbosity=None,
-                 extra_vars=None,
-                 connection_type="ssh",
-                 passwords=None,
-                 private_key_file=None,
-                 check=False):
+    # Default results callback
+    results_callback_class = PlaybookResultCallBack
+    loader_class = DataLoader
+    variable_manager_class = VariableManager
+    options = get_default_options()
 
+    def __init__(self, inventory=None, options=None):
+        """
+        :param options: Ansible options like ansible.cfg
+        :param inventory: Ansible inventory
+        """
+        if options:
+            self.options = options
         C.RETRY_FILES_ENABLED = False
-        self.callbackmodule = PlaybookResultCallBack()
-        if playbook_path is None or not os.path.exists(playbook_path):
-            raise AnsibleError(
-                "Not Found the playbook file: %s." % playbook_path)
-        self.playbook_path = playbook_path
-        self.loader = DataLoader()
-        self.variable_manager = VariableManager()
-        self.passwords = passwords or {}
-        self.inventory = JMSInventory(hosts)
-
-        self.options = self.Options(
-            listtags=listtags,
-            listtasks=listtasks,
-            listhosts=listhosts,
-            syntax=syntax,
-            timeout=timeout,
-            connection=connection_type,
-            module_path=module_path,
-            forks=forks,
-            remote_user=remote_user,
-            private_key_file=private_key_file,
-            ssh_common_args=ssh_common_args or "",
-            ssh_extra_args=ssh_extra_args or "",
-            sftp_extra_args=sftp_extra_args,
-            scp_extra_args=scp_extra_args,
-            become=become,
-            become_method=become_method,
-            become_user=become_user,
-            verbosity=verbosity,
-            extra_vars=extra_vars or [],
-            check=check
+        self.inventory = inventory
+        self.loader = self.loader_class()
+        self.results_callback = self.results_callback_class()
+        self.playbook_path = options.playbook_path
+        self.variable_manager = self.variable_manager_class(
+            loader=self.loader, inventory=self.inventory
         )
+        self.passwords = options.passwords
+        self.__check()
 
-        self.variable_manager.extra_vars = load_extra_vars(loader=self.loader,
-                                                           options=self.options)
-        self.variable_manager.options_vars = load_options_vars(self.options)
+    def __check(self):
+        if self.options.playbook_path is None or \
+                not os.path.exists(self.options.playbook_path):
+            raise AnsibleError(
+                "Not Found the playbook file: {}.".format(self.options.playbook_path)
+            )
+        if not self.inventory.list_hosts('all'):
+            raise AnsibleError('Inventory is empty')
 
-        self.variable_manager.set_inventory(self.inventory)
-
-        # 初始化playbook的executor
-        self.runner = PlaybookExecutor(
+    def run(self):
+        executor = PlaybookExecutor(
             playbooks=[self.playbook_path],
             inventory=self.inventory,
             variable_manager=self.variable_manager,
             loader=self.loader,
-            options=self.options,
-            passwords=self.passwords)
+            passwords={"conn_pass": self.passwords}
+        )
+        context.CLIARGS = ImmutableDict(self.options)
 
-        if self.runner._tqm:
-            self.runner._tqm._stdout_callback = self.callbackmodule
-
-    def run(self):
-        if not self.inventory.list_hosts('all'):
-            raise AnsibleError('Inventory is empty')
-        self.runner.run()
-        self.runner._tqm.cleanup()
-        return self.callbackmodule.output
+        if executor._tqm:
+            executor._tqm._stdout_callback = self.results_callback
+        executor.run()
+        executor._tqm.cleanup()
+        return self.results_callback.output
 
 
-class AdHocRunner(object):
+class AdHocRunner:
     """
-    ADHoc接口
+    ADHoc Runner接口
     """
-    Options = namedtuple("Options", [
-        'connection', 'module_path', 'private_key_file', "remote_user",
-        'timeout', 'forks', 'become', 'become_method', 'become_user',
-        'check', 'extra_vars',
-        ]
-    )
-
     results_callback_class = AdHocResultCallback
+    results_callback = None
+    loader_class = DataLoader
+    variable_manager_class = VariableManager
+    default_options = get_default_options()
+    command_modules_choices = ('shell', 'raw', 'command', 'script', 'win_shell')
 
-    def __init__(self,
-                 hosts=C.DEFAULT_HOST_LIST,
-                 forks=C.DEFAULT_FORKS,  # 5
-                 timeout=C.DEFAULT_TIMEOUT,  # SSH timeout = 10s
-                 remote_user=C.DEFAULT_REMOTE_USER,  # root
-                 module_path=None,  # dirs of custome modules
-                 connection_type="smart",
-                 become=None,
-                 become_method=None,
-                 become_user=None,
-                 check=False,
-                 passwords=None,
-                 extra_vars=None,
-                 private_key_file=None,
-                 gather_facts='no'):
-
-        self.pattern = ''
-        self.variable_manager = VariableManager()
+    def __init__(self, inventory, options=None):
+        self.options = self.update_options(options)
+        self.inventory = inventory
         self.loader = DataLoader()
-        self.gather_facts = gather_facts
-        self.results_callback = AdHocRunner.results_callback_class()
-        self.options = self.Options(
-            connection=connection_type,
-            timeout=timeout,
-            module_path=module_path,
-            forks=forks,
-            become=become,
-            become_method=become_method,
-            become_user=become_user,
-            check=check,
-            remote_user=remote_user,
-            extra_vars=extra_vars or [],
-            private_key_file=private_key_file,
+        self.variable_manager = VariableManager(
+            loader=self.loader, inventory=self.inventory
         )
 
-        self.variable_manager.extra_vars = load_extra_vars(self.loader,
-                                                           options=self.options)
-        self.variable_manager.options_vars = load_options_vars(self.options)
-        self.passwords = passwords or {}
-        self.inventory = JMSInventory(hosts)
-        self.variable_manager.set_inventory(self.inventory)
-        self.tasks = []
-        self.play_source = None
-        self.play = None
-        self.runner = None
+    def get_result_callback(self, file_obj=None):
+        return self.__class__.results_callback_class()
 
     @staticmethod
     def check_module_args(module_name, module_args=''):
         if module_name in C.MODULE_REQUIRE_ARGS and not module_args:
             err = "No argument passed to '%s' module." % module_name
-            print(err)
-            return False
-        return True
+            raise AnsibleError(err)
 
-    def run(self, task_tuple, pattern='all', task_name='Ansible Ad-hoc'):
-        """
-        :param task_tuple:  (('shell', 'ls'), ('ping', ''))
-        :param pattern:
-        :param task_name:
-        :return:
-        """
-        for module, args in task_tuple:
-            if not self.check_module_args(module, args):
-                return
-            self.tasks.append(
-                dict(action=dict(
-                    module=module,
-                    args=args,
-                ))
+    def check_pattern(self, pattern):
+        if not pattern:
+            raise AnsibleError("Pattern `{}` is not valid!".format(pattern))
+        if not self.inventory.list_hosts("all"):
+            raise AnsibleError("Inventory is empty.")
+        if not self.inventory.list_hosts(pattern):
+            raise AnsibleError(
+                "pattern: %s  dose not match any hosts." % pattern
             )
 
-        self.play_source = dict(
-            name=task_name,
+    def clean_args(self, module, args):
+        if not args:
+            return ''
+        if module not in self.command_modules_choices:
+            return args
+        if isinstance(args, str):
+            if args.startswith('executable='):
+                _args = args.split(' ')
+                executable, command = _args[0].split('=')[1], ' '.join(_args[1:])
+                args = {'executable': executable, '_raw_params':  command}
+            else:
+                args = {'_raw_params':  args}
+            return args
+        else:
+            return args
+
+    def clean_tasks(self, tasks):
+        cleaned_tasks = []
+        for task in tasks:
+            module = task['action']['module']
+            args = task['action'].get('args')
+            cleaned_args = self.clean_args(module, args)
+            task['action']['args'] = cleaned_args
+            self.check_module_args(module, cleaned_args)
+            cleaned_tasks.append(task)
+        return cleaned_tasks
+
+    def update_options(self, options):
+        _options = {k: v for k, v in self.default_options.items()}
+        if options and isinstance(options, dict):
+            _options.update(options)
+        return _options
+
+    def run(self, tasks, pattern, play_name='Ansible Ad-hoc', gather_facts='no'):
+        """
+        :param tasks: [{'action': {'module': 'shell', 'args': 'ls'}, ...}, ]
+        :param pattern: all, *, or others
+        :param play_name: The play name
+        :param gather_facts:
+        :return:
+        """
+        self.check_pattern(pattern)
+        self.results_callback = self.get_result_callback()
+        cleaned_tasks = self.clean_tasks(tasks)
+        context.CLIARGS = ImmutableDict(self.options)
+
+        play_source = dict(
+            name=play_name,
             hosts=pattern,
-            gather_facts=self.gather_facts,
-            tasks=self.tasks
+            gather_facts=gather_facts,
+            tasks=cleaned_tasks
         )
 
-        self.play = Play().load(
-            self.play_source,
+        play = Play().load(
+            play_source,
             variable_manager=self.variable_manager,
             loader=self.loader,
         )
 
-        self.runner = TaskQueueManager(
+        tqm = TaskQueueManager(
             inventory=self.inventory,
             variable_manager=self.variable_manager,
             loader=self.loader,
-            options=self.options,
-            passwords=self.passwords,
             stdout_callback=self.results_callback,
+            passwords={"conn_pass": self.options.get("password", "")}
         )
-
-        if not self.inventory.list_hosts("all"):
-            raise AnsibleError("Inventory is empty.")
-
-        if not self.inventory.list_hosts(self.pattern):
-            raise AnsibleError(
-                "pattern: %s  dose not match any hosts." % self.pattern)
-
         try:
-            self.runner.run(self.play)
+            tqm.run(play)
+            return self.results_callback
         except Exception as e:
-            logger.warning(e)
-        else:
-            logger.debug(self.results_callback.result_q)
-            return self.results_callback.result_q
+            raise AnsibleError(e)
         finally:
-            if self.runner:
-                self.runner.cleanup()
-            if self.loader:
-                self.loader.cleanup_all_tmp_files()
-
-    def clean_result(self):
-        """
-        :return: {
-            "success": ['hostname',],
-            "failed": [('hostname', 'msg'), {}],
-        }
-        """
-        result = {'success': [], 'failed': []}
-        for host in self.results_callback.result_q['contacted']:
-            result['success'].append(host)
-
-        for host, msgs in self.results_callback.result_q['dark'].items():
-            msg = '\n'.join(['{} {}: {}'.format(
-                msg.get('module_stdout', ''),
-                msg.get('invocation', {}).get('module_name'),
-                msg.get('msg', '')) for msg in msgs])
-            result['failed'].append((host, msg))
-        return result
+            if tqm is not None:
+                tqm.cleanup()
+            shutil.rmtree(C.DEFAULT_LOCAL_TMP, True)
 
 
-def test_run():
-    assets = [
-        {
-                "hostname": "192.168.244.129",
-                "ip": "192.168.244.129",
-                "port": 22,
-                "username": "root",
-                "password": "redhat",
-        },
-    ]
-    task_tuple = (('shell', 'ls'),)
-    hoc = AdHocRunner(hosts=assets)
-    hoc.results_callback = CommandResultCallback()
-    ret = hoc.run(task_tuple)
-    print(ret)
+class CommandRunner(AdHocRunner):
+    results_callback_class = CommandResultCallback
+    modules_choices = ('shell', 'raw', 'command', 'script', 'win_shell')
 
-    #play = PlayBookRunner(assets, playbook_path='/tmp/some.yml')
-    """
-    # /tmp/some.yml
-    ---
-    - name: Test the plabybook API.
-      hosts: all
-      remote_user: root
-      gather_facts: yes
-      tasks:
-       - name: exec uptime
-         shell: uptime
-    """
-    #play.run()
+    def execute(self, cmd, pattern, module='shell'):
+        if module and module not in self.modules_choices:
+            raise AnsibleError("Module should in {}".format(self.modules_choices))
 
+        tasks = [
+            {"action": {"module": module, "args": cmd}}
+        ]
+        return self.run(tasks, pattern, play_name=cmd)
 
-if __name__ == "__main__":
-    test_run()

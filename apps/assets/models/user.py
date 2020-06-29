@@ -2,105 +2,67 @@
 # -*- coding: utf-8 -*-
 #
 
-from __future__ import unicode_literals
-import os
 import logging
-from hashlib import md5
 
-from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils.translation import ugettext_lazy as _
-from django.conf import settings
+from django.core.validators import MinValueValidator, MaxValueValidator
 
-from common.utils import signer, validate_ssh_private_key, ssh_key_string_to_obj
+from common.utils import signer
+from .base import BaseUser
+from .asset import Asset
 
-__all__ = ['AdminUser', 'SystemUser', 'private_key_validator']
+
+__all__ = ['AdminUser', 'SystemUser']
 logger = logging.getLogger(__name__)
 
 
-def private_key_validator(value):
-    if not validate_ssh_private_key(value):
-        raise ValidationError(
-            _('%(value)s is not an even number'),
-            params={'value': value},
-        )
-
-
-class AdminUser(models.Model):
+class AdminUser(BaseUser):
+    """
+    A privileged user that ansible can use it to push system user and so on
+    """
     BECOME_METHOD_CHOICES = (
         ('sudo', 'sudo'),
         ('su', 'su'),
     )
-    name = models.CharField(max_length=128, unique=True, verbose_name=_('Name'))
-    username = models.CharField(max_length=16, verbose_name=_('Username'))
-    _password = models.CharField(
-        max_length=256, blank=True, null=True, verbose_name=_('Password'))
-    _private_key = models.CharField(max_length=4096, blank=True, null=True, verbose_name=_('SSH private key'),
-                                    validators=[private_key_validator,])
     become = models.BooleanField(default=True)
     become_method = models.CharField(choices=BECOME_METHOD_CHOICES, default='sudo', max_length=4)
     become_user = models.CharField(default='root', max_length=64)
-    become_pass = models.CharField(default='', max_length=128)
-    _public_key = models.CharField(
-        max_length=4096, blank=True, verbose_name=_('SSH public key'))
-    comment = models.TextField(blank=True, verbose_name=_('Comment'))
-    date_created = models.DateTimeField(auto_now_add=True, null=True)
-    created_by = models.CharField(
-        max_length=32, null=True, verbose_name=_('Created by'))
+    _become_pass = models.CharField(default='', blank=True, max_length=128)
+    CONNECTIVITY_CACHE_KEY = '_ADMIN_USER_CONNECTIVE_{}'
+    _prefer = "admin_user"
 
-    def __unicode__(self):
+    def __str__(self):
         return self.name
-    __str__ = __unicode__
 
     @property
-    def password(self):
-        if self._password:
-            return signer.unsign(self._password)
+    def become_pass(self):
+        password = signer.unsign(self._become_pass)
+        if password:
+            return password
         else:
-            return ''
+            return ""
 
-    @password.setter
-    def password(self, password_raw):
-        self._password = signer.sign(password_raw)
+    @become_pass.setter
+    def become_pass(self, password):
+        self._become_pass = signer.sign(password)
 
     @property
-    def private_key(self):
-        if self._private_key:
-            key_str = signer.unsign(self._private_key)
-            return ssh_key_string_to_obj(key_str)
+    def become_info(self):
+        if self.become:
+            info = {
+                "method": self.become_method,
+                "user": self.become_user,
+                "pass": self.become_pass,
+            }
         else:
-            return None
-
-    @private_key.setter
-    def private_key(self, private_key_raw):
-        self._private_key = signer.sign(private_key_raw)
-
-    @property
-    def private_key_file(self):
-        if not self.private_key:
-            return None
-        project_dir = settings.PROJECT_DIR
-        tmp_dir = os.path.join(project_dir, 'tmp')
-        key_name = md5(self._private_key.encode()).hexdigest()
-        key_path = os.path.join(tmp_dir, key_name)
-        if not os.path.exists(key_path):
-            self.private_key.write_private_key_file(key_path)
-        return key_path
-
-    @property
-    def public_key(self):
-        return signer.unsign(self._public_key)
-
-    @public_key.setter
-    def public_key(self, public_key_raw):
-        self._public_key = signer.sign(public_key_raw)
-
-    @property
-    def assets_amount(self):
-        return self.assets.count()
+            info = None
+        return info
 
     class Meta:
         ordering = ['name']
+        unique_together = [('name', 'org_id')]
+        verbose_name = _("Admin user")
 
     @classmethod
     def generate_fake(cls, count=10):
@@ -123,117 +85,114 @@ class AdminUser(models.Model):
                 continue
 
 
-class SystemUser(models.Model):
+class SystemUser(BaseUser):
+    PROTOCOL_SSH = 'ssh'
+    PROTOCOL_RDP = 'rdp'
+    PROTOCOL_TELNET = 'telnet'
+    PROTOCOL_VNC = 'vnc'
+    PROTOCOL_MYSQL = 'mysql'
     PROTOCOL_CHOICES = (
-        ('ssh', 'ssh'),
+        (PROTOCOL_SSH, 'ssh'),
+        (PROTOCOL_RDP, 'rdp'),
+        (PROTOCOL_TELNET, 'telnet'),
+        (PROTOCOL_VNC, 'vnc'),
+        (PROTOCOL_MYSQL, 'mysql'),
     )
-    AUTH_METHOD_CHOICES = (
-        ('P', 'Password'),
-        ('K', 'Public key'),
+
+    LOGIN_AUTO = 'auto'
+    LOGIN_MANUAL = 'manual'
+    LOGIN_MODE_CHOICES = (
+        (LOGIN_AUTO, _('Automatic login')),
+        (LOGIN_MANUAL, _('Manually login'))
     )
-    name = models.CharField(max_length=128, unique=True,
-                            verbose_name=_('Name'))
-    username = models.CharField(max_length=16, verbose_name=_('Username'))
-    _password = models.CharField(
-        max_length=256, blank=True, verbose_name=_('Password'))
-    protocol = models.CharField(
-        max_length=16, choices=PROTOCOL_CHOICES, default='ssh', verbose_name=_('Protocol'))
-    _private_key = models.CharField(
-        max_length=8192, blank=True, verbose_name=_('SSH private key'))
-    _public_key = models.CharField(
-        max_length=8192, blank=True, verbose_name=_('SSH public key'))
-    auth_method = models.CharField(choices=AUTH_METHOD_CHOICES, default='K',
-                                   max_length=1, verbose_name=_('Auth method'))
+    username_same_with_user = models.BooleanField(default=False, verbose_name=_("Username same with user"))
+    nodes = models.ManyToManyField('assets.Node', blank=True, verbose_name=_("Nodes"))
+    assets = models.ManyToManyField('assets.Asset', blank=True, verbose_name=_("Assets"))
+    users = models.ManyToManyField('users.User', blank=True, verbose_name=_("Users"))
+    groups = models.ManyToManyField('users.UserGroup', blank=True, verbose_name=_("User groups"))
+    priority = models.IntegerField(default=20, verbose_name=_("Priority"), validators=[MinValueValidator(1), MaxValueValidator(100)])
+    protocol = models.CharField(max_length=16, choices=PROTOCOL_CHOICES, default='ssh', verbose_name=_('Protocol'))
     auto_push = models.BooleanField(default=True, verbose_name=_('Auto push'))
-    sudo = models.TextField(
-        max_length=4096, default='/sbin/ifconfig', verbose_name=_('Sudo'))
-    shell = models.CharField(
-        max_length=64,  default='/bin/bash', verbose_name=_('Shell'))
-    date_created = models.DateTimeField(auto_now_add=True)
-    created_by = models.CharField(
-        max_length=32, blank=True, verbose_name=_('Created by'))
-    comment = models.TextField(
-        max_length=128, blank=True, verbose_name=_('Comment'))
+    sudo = models.TextField(default='/bin/whoami', verbose_name=_('Sudo'))
+    shell = models.CharField(max_length=64,  default='/bin/bash', verbose_name=_('Shell'))
+    login_mode = models.CharField(choices=LOGIN_MODE_CHOICES, default=LOGIN_AUTO, max_length=10, verbose_name=_('Login mode'))
+    cmd_filters = models.ManyToManyField('CommandFilter', related_name='system_users', verbose_name=_("Command filter"), blank=True)
+    sftp_root = models.CharField(default='tmp', max_length=128, verbose_name=_("SFTP Root"))
+    _prefer = 'system_user'
 
-    def __unicode__(self):
-        return self.name
-    __str__ = __unicode__
+    def __str__(self):
+        username = self.username
+        if self.username_same_with_user:
+            username = 'dynamic'
+        return '{0.name}({1})'.format(self, username)
 
-    @property
-    def password(self):
-        if self._password:
-            return signer.unsign(self._password)
-        return None
-
-    @password.setter
-    def password(self, password_raw):
-        self._password = signer.sign(password_raw)
+    def get_username(self):
+        if self.username_same_with_user:
+            return list(self.users.values_list('username', flat=True))
+        else:
+            return self.username
 
     @property
-    def private_key(self):
-        if self._private_key:
-            return signer.unsign(self._private_key)
-        return None
-
-    @private_key.setter
-    def private_key(self, private_key_raw):
-        self._private_key = signer.sign(private_key_raw)
+    def nodes_amount(self):
+        return self.nodes.all().count()
 
     @property
-    def public_key(self):
-        return signer.unsign(self._public_key)
+    def login_mode_display(self):
+        return self.get_login_mode_display()
 
-    @public_key.setter
-    def public_key(self, public_key_raw):
-        self._public_key = signer.sign(public_key_raw)
+    def is_need_push(self):
+        if self.auto_push and self.protocol in [self.PROTOCOL_SSH, self.PROTOCOL_RDP]:
+            return True
+        else:
+            return False
 
-    def get_assets_inherit_from_asset_groups(self):
-        assets = set()
-        asset_groups = self.asset_groups.all()
-        for asset_group in asset_groups:
-            for asset in asset_group.assets.all():
-                setattr(asset, 'is_inherit_from_asset_groups', True)
-                setattr(asset, 'inherit_from_asset_groups',
-                        getattr(asset, 'inherit_from_asset_groups', set()).add(asset_group))
-                assets.add(asset)
+    @property
+    def is_need_cmd_filter(self):
+        return self.protocol not in [self.PROTOCOL_RDP, self.PROTOCOL_VNC]
+
+    @property
+    def is_need_test_asset_connective(self):
+        return self.protocol not in [self.PROTOCOL_MYSQL]
+
+    @property
+    def can_perm_to_asset(self):
+        return self.protocol not in [self.PROTOCOL_MYSQL]
+
+    def _merge_auth(self, other):
+        super()._merge_auth(other)
+        if self.username_same_with_user:
+            self.username = other.username
+
+    @property
+    def cmd_filter_rules(self):
+        from .cmd_filter import CommandFilterRule
+        rules = CommandFilterRule.objects.filter(
+            filter__in=self.cmd_filters.all()
+        ).distinct()
+        return rules
+
+    def is_command_can_run(self, command):
+        for rule in self.cmd_filter_rules:
+            action, matched_cmd = rule.match(command)
+            if action == rule.ACTION_ALLOW:
+                return True, None
+            elif action == rule.ACTION_DENY:
+                return False, matched_cmd
+        return True, None
+
+    def get_all_assets(self):
+        from assets.models import Node
+        nodes_keys = self.nodes.all().values_list('key', flat=True)
+        assets_ids = set(self.assets.all().values_list('id', flat=True))
+        nodes_assets_ids = Node.get_nodes_all_assets_ids(nodes_keys)
+        assets_ids.update(nodes_assets_ids)
+        assets = Asset.objects.filter(id__in=assets_ids)
         return assets
 
-    def get_assets(self):
-        assets = set(self.assets.all()
-                     ) | self.get_assets_inherit_from_asset_groups()
-        return list(assets)
-
-    def _to_secret_json(self):
-        """Push system user use it"""
-        return {
-            'name': self.name,
-            'username': self.username,
-            'shell': self.shell,
-            'sudo': self.sudo,
-            'password': self.password,
-            'public_key': self.public_key
-        }
-
-    @property
-    def assets_amount(self):
-        return self.assets.count()
-
-    @property
-    def asset_group_amount(self):
-        return self.asset_groups.count()
-
-    def to_json(self):
-        return {
-            'id': self.id,
-            'name': self.name,
-            'username': self.username,
-            'protocol': self.protocol,
-            'auth_method': self.auth_method,
-            'auto_push': self.auto_push,
-        }
-
     class Meta:
         ordering = ['name']
+        unique_together = [('name', 'org_id')]
+        verbose_name = _("System user")
 
     @classmethod
     def generate_fake(cls, count=10):
@@ -254,6 +213,3 @@ class SystemUser(models.Model):
             except IntegrityError:
                 print('Error continue')
                 continue
-
-
-

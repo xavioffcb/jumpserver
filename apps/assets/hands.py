@@ -6,13 +6,10 @@
 
     Other module of this app shouldn't connect with other app.
 
-    :copyright: (c) 2014-2017 by Jumpserver Team.
+    :copyright: (c) 2014-2018 by JumpServer Team.
     :license: GPL v2, see LICENSE for more details.
 """
 
 
-from users.utils import AdminUserRequiredMixin
-from users.permissions import IsAppUser, IsSuperUser, IsValidUser
+from common.permissions import IsAppUser, IsOrgAdmin, IsValidUser, IsOrgAdminOrAppUser
 from users.models import User, UserGroup
-from perms.utils import get_user_granted_assets
-from perms.tasks import push_users
